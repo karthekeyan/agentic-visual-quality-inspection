@@ -2,6 +2,8 @@
 
 A vision-based defect detection system for metal casting parts, built with PyTorch. The system classifies casting images (e.g. submersible pump impellers) as **ok** or **defective**, with a project structure designed to support iterating from a simple CNN classifier toward more advanced, agentic inspection pipelines.
 
+## Documentation See the [Functional Proposal](docs/functional-proposal.md) for the full system design, agent roles, and current validation status.  
+
 ## Project Structure
 
 ```
