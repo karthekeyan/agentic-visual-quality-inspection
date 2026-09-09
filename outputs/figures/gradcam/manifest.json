@@ -1,0 +1,82 @@
+[
+  {
+    "tag": "tp_high_conf",
+    "image_path": "data/raw/casting_data/casting_data/test/def_front/cast_def_0_1063.jpeg",
+    "true_label": 1,
+    "true_class": "defective",
+    "predicted_label": 1,
+    "predicted_class": "defective",
+    "confidence": 1.0,
+    "correct": true,
+    "overlay_path": "outputs/figures/gradcam/tp_high_conf_cast_def_0_1063.png",
+    "heatmap_path": "outputs/figures/gradcam/tp_high_conf_cast_def_0_1063.npy",
+    "heatmap_shape": [
+      224,
+      224
+    ]
+  },
+  {
+    "tag": "tp_low_conf",
+    "image_path": "data/raw/casting_data/casting_data/test/def_front/cast_def_0_1591.jpeg",
+    "true_label": 1,
+    "true_class": "defective",
+    "predicted_label": 1,
+    "predicted_class": "defective",
+    "confidence": 0.6037447452545166,
+    "correct": true,
+    "overlay_path": "outputs/figures/gradcam/tp_low_conf_cast_def_0_1591.png",
+    "heatmap_path": "outputs/figures/gradcam/tp_low_conf_cast_def_0_1591.npy",
+    "heatmap_shape": [
+      224,
+      224
+    ]
+  },
+  {
+    "tag": "tn_high_conf",
+    "image_path": "data/raw/casting_data/casting_data/test/ok_front/cast_ok_0_2927.jpeg",
+    "true_label": 0,
+    "true_class": "ok",
+    "predicted_label": 0,
+    "predicted_class": "ok",
+    "confidence": 0.9999998807907104,
+    "correct": true,
+    "overlay_path": "outputs/figures/gradcam/tn_high_conf_cast_ok_0_2927.png",
+    "heatmap_path": "outputs/figures/gradcam/tn_high_conf_cast_ok_0_2927.npy",
+    "heatmap_shape": [
+      224,
+      224
+    ]
+  },
+  {
+    "tag": "tn_low_conf",
+    "image_path": "data/raw/casting_data/casting_data/test/ok_front/cast_ok_0_16.jpeg",
+    "true_label": 0,
+    "true_class": "ok",
+    "predicted_label": 0,
+    "predicted_class": "ok",
+    "confidence": 0.7562565803527832,
+    "correct": true,
+    "overlay_path": "outputs/figures/gradcam/tn_low_conf_cast_ok_0_16.png",
+    "heatmap_path": "outputs/figures/gradcam/tn_low_conf_cast_ok_0_16.npy",
+    "heatmap_shape": [
+      224,
+      224
+    ]
+  },
+  {
+    "tag": "false_negative",
+    "image_path": "data/raw/casting_data/casting_data/test/def_front/cast_def_0_2102.jpeg",
+    "true_label": 1,
+    "true_class": "defective",
+    "predicted_label": 0,
+    "predicted_class": "ok",
+    "confidence": 0.6308942437171936,
+    "correct": false,
+    "overlay_path": "outputs/figures/gradcam/false_negative_cast_def_0_2102.png",
+    "heatmap_path": "outputs/figures/gradcam/false_negative_cast_def_0_2102.npy",
+    "heatmap_shape": [
+      224,
+      224
+    ]
+  }
+]
