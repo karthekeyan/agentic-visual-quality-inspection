@@ -1,0 +1,37 @@
+{
+  "architecture": "resnet18",
+  "checkpoint_path": "models/checkpoints/best.pt",
+  "checkpoint_epoch": 8,
+  "checkpoint_val_loss": 0.006457909780454145,
+  "checkpoint_val_acc": 0.9979899497487437,
+  "test_set_size": 715,
+  "test_class_counts": {
+    "ok": 262,
+    "defective": 453
+  },
+  "positive_class": "defective",
+  "metrics": {
+    "accuracy": 0.9986013986013986,
+    "precision": 1.0,
+    "recall": 0.9977924944812362,
+    "f1": 0.9988950276243094,
+    "roc_auc": 1.0
+  },
+  "confusion_matrix": {
+    "labels": [
+      "ok",
+      "defective"
+    ],
+    "matrix": [
+      [
+        262,
+        0
+      ],
+      [
+        1,
+        452
+      ]
+    ],
+    "layout": "rows=true label, cols=predicted label, order=[ok, defective]"
+  }
+}

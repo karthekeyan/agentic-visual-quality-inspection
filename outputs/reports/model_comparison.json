@@ -1,0 +1,89 @@
+{
+  "gpu": "NVIDIA TITAN RTX",
+  "models": [
+    {
+      "architecture": "resnet18",
+      "checkpoint_path": "models/checkpoints/best.pt",
+      "checkpoint_epoch": 8,
+      "num_parameters": 11187158,
+      "checkpoint_size_bytes": 134247906,
+      "checkpoint_size_mb": 128.0287799835205,
+      "test_metrics": {
+        "accuracy": 0.9986013986013986,
+        "precision": 1.0,
+        "recall": 0.9977924944812362,
+        "f1": 0.9988950276243094,
+        "roc_auc": 1.0
+      },
+      "confusion_matrix": {
+        "labels": [
+          "ok",
+          "defective"
+        ],
+        "matrix": [
+          [
+            262,
+            0
+          ],
+          [
+            1,
+            452
+          ]
+        ],
+        "layout": "rows=true label, cols=predicted label, order=[ok, defective]"
+      },
+      "latency": {
+        "single_image_mean_ms": 2.0364898651496333,
+        "single_image_median_ms": 1.9042540006921627,
+        "single_image_min_ms": 1.8807640008162707,
+        "single_image_max_ms": 2.8294479998294264,
+        "single_image_std_ms": 0.1769889663807975,
+        "batch32_mean_latency_ms": 11.437252599959416,
+        "batch32_throughput_img_per_sec": 2797.8747273723366
+      },
+      "gpu": "NVIDIA TITAN RTX"
+    },
+    {
+      "architecture": "mobilenet_v2",
+      "checkpoint_path": "models/checkpoints/mobilenet_v2/best.pt",
+      "checkpoint_epoch": 50,
+      "num_parameters": 2260598,
+      "checkpoint_size_bytes": 27057666,
+      "checkpoint_size_mb": 25.804201126098633,
+      "test_metrics": {
+        "accuracy": 0.9986013986013986,
+        "precision": 1.0,
+        "recall": 0.9977924944812362,
+        "f1": 0.9988950276243094,
+        "roc_auc": 0.9999831488128339
+      },
+      "confusion_matrix": {
+        "labels": [
+          "ok",
+          "defective"
+        ],
+        "matrix": [
+          [
+            262,
+            0
+          ],
+          [
+            1,
+            452
+          ]
+        ],
+        "layout": "rows=true label, cols=predicted label, order=[ok, defective]"
+      },
+      "latency": {
+        "single_image_mean_ms": 3.716359064928838,
+        "single_image_median_ms": 3.702931498992257,
+        "single_image_min_ms": 3.677968001284171,
+        "single_image_max_ms": 4.017736999230692,
+        "single_image_std_ms": 0.04777186873541227,
+        "batch32_mean_latency_ms": 12.948960899908949,
+        "batch32_throughput_img_per_sec": 2471.2407618919456
+      },
+      "gpu": "NVIDIA TITAN RTX"
+    }
+  ]
+}

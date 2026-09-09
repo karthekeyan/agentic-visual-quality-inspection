@@ -134,7 +134,14 @@ def benchmark_batch_throughput(model, device, images, batch_size):
 
 
 def main():
-    with open(REPO / "config/config.yaml") as f:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="config/config.yaml")
+    parser.add_argument("--out", default=None, help="Report JSON path (default: outputs/reports/latency_benchmark_<architecture>.json)")
+    args = parser.parse_args()
+
+    with open(REPO / args.config) as f:
         config = yaml.safe_load(f)
 
     if not torch.cuda.is_available():
@@ -145,8 +152,9 @@ def main():
     device = torch.device("cuda")
     gpu_name = torch.cuda.get_device_name(device)
 
+    architecture = config["model"]["architecture"]
     checkpoint_path = REPO / config["model"]["checkpoint_dir"] / "best.pt"
-    model = build_model(architecture="resnet18", num_classes=2, pretrained=False).to(device)
+    model = build_model(architecture=architecture, num_classes=2, pretrained=False).to(device)
     ckpt = load_checkpoint(checkpoint_path, model, map_location=device)
     model.eval()
     print(f"Loaded checkpoint: epoch={ckpt['epoch']} val_loss={ckpt['val_loss']:.4f} val_acc={ckpt['val_acc']:.4f}")
@@ -202,7 +210,7 @@ def main():
             "val_acc": ckpt["val_acc"],
         },
         "model": {
-            "architecture": config["model"]["architecture"],
+            "architecture": architecture,
             "image_size": config["data"]["image_size"],
         },
         "methodology": {
@@ -214,7 +222,7 @@ def main():
         "batch_throughput": batch_results,
     }
 
-    out_path = REPO / "outputs" / "reports" / "latency_benchmark.json"
+    out_path = REPO / (args.out or f"outputs/reports/latency_benchmark_{architecture}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)

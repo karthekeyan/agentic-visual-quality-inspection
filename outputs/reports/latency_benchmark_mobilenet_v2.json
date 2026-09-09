@@ -1,0 +1,55 @@
+{
+  "gpu": "NVIDIA TITAN RTX",
+  "gpu_note": "Titan RTX is a desktop/workstation GPU (24GB, full-size PCIe card). This benchmark reflects that hardware, not edge/embedded devices (e.g. Jetson) or mobile inference -- do not generalize this number to a deployment target without re-measuring there.",
+  "checkpoint": {
+    "path": "models/checkpoints/mobilenet_v2/best.pt",
+    "epoch": 50,
+    "val_loss": 0.0036596562116829228,
+    "val_acc": 0.9979899497487437
+  },
+  "model": {
+    "architecture": "mobilenet_v2",
+    "image_size": [
+      224,
+      224
+    ]
+  },
+  "methodology": {
+    "timed_region": "host-to-device transfer + model forward pass only (images pre-decoded/pre-transformed)",
+    "synchronization": "torch.cuda.synchronize() called immediately before and after every timed region",
+    "single_image_warmup_runs": 15
+  },
+  "single_image_latency_ms": {
+    "num_warmup_runs": 15,
+    "num_timed_runs": 200,
+    "mean_ms": 3.716359064928838,
+    "median_ms": 3.702931498992257,
+    "min_ms": 3.677968001284171,
+    "max_ms": 4.017736999230692,
+    "std_ms": 0.04777186873541227,
+    "derived_throughput_img_per_sec": 269.0805658250216
+  },
+  "batch_throughput": {
+    "1": {
+      "batch_size": 1,
+      "num_warmup_iters": 10,
+      "num_timed_iters": 30,
+      "mean_batch_latency_ms": 3.7778430666852123,
+      "throughput_img_per_sec": 264.70130769021824
+    },
+    "8": {
+      "batch_size": 8,
+      "num_warmup_iters": 10,
+      "num_timed_iters": 30,
+      "mean_batch_latency_ms": 4.132153500298348,
+      "throughput_img_per_sec": 1936.0364999563512
+    },
+    "32": {
+      "batch_size": 32,
+      "num_warmup_iters": 10,
+      "num_timed_iters": 30,
+      "mean_batch_latency_ms": 12.948960899908949,
+      "throughput_img_per_sec": 2471.2407618919456
+    }
+  }
+}
