@@ -41,6 +41,12 @@ class InspectionState(TypedDict, total=False):
         heatmap: Grad-CAM heatmap, float32 (H, W) in [0, 1].
         overlay_image: Grad-CAM heatmap alpha-blended over the input
             image, for display.
+        defect_characterization: set by the Characterization Agent -- a
+            heuristic (rule-based, not learned) description of the
+            Grad-CAM activation pattern, only meaningful when
+            label == 'defective'. See
+            src.agents.characterization_agent.DefectCharacterization;
+            always carries heuristic_approximation=True.
         agent_outputs: every agent's structured output, keyed by agent
             name (e.g. "inspection_agent"), so later agents and the final
             report can see what earlier agents produced without depending
@@ -54,5 +60,7 @@ class InspectionState(TypedDict, total=False):
     raw_logits: Optional[np.ndarray]
     heatmap: Optional[np.ndarray]
     overlay_image: Optional[Image.Image]
+
+    defect_characterization: Optional[Any]
 
     agent_outputs: Annotated[Dict[str, Any], _merge_agent_outputs]
