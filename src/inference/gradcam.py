@@ -51,6 +51,7 @@ class GradCAM:
         self.model = model
         self._activations = None
         self._gradients = None
+        self.last_logits = None  # (1, num_classes) tensor from the most recent __call__
         target_layer.register_forward_hook(self._save_activation)
         target_layer.register_full_backward_hook(self._save_gradient)
 
@@ -78,6 +79,7 @@ class GradCAM:
         """
         self.model.zero_grad(set_to_none=True)
         logits = self.model(input_tensor)
+        self.last_logits = logits.detach()
         probs = F.softmax(logits, dim=1)
 
         if class_idx is None:
@@ -132,12 +134,54 @@ def _colorize(heatmap):
     return (colored * 255).astype(np.uint8)
 
 
-def _overlay_heatmap(base_image, heatmap, alpha=0.45):
+def overlay_heatmap(base_image, heatmap, alpha=0.45):
     """Alpha-blend a colorized heatmap over an RGB PIL image (same size)."""
     base = np.asarray(base_image, dtype=np.float32)
     colored = _colorize(heatmap).astype(np.float32)
     blended = (1 - alpha) * base + alpha * colored
     return Image.fromarray(blended.clip(0, 255).astype(np.uint8))
+
+
+def explain_pil_image(pil_image, model, gradcam, image_size, device, class_idx=None):
+    """Grad-CAM explanation for an already-loaded RGB PIL image.
+
+    Same computation as `explain_image` minus the disk read, so callers
+    that already have an image in memory (e.g. src.inference.predict,
+    which also accepts arrays/paths) don't need to round-trip through a
+    file.
+
+    Args:
+        pil_image: RGB PIL.Image.
+        model, gradcam, image_size: from `load_model_for_gradcam`.
+        device: torch device the model lives on.
+        class_idx: explain this class instead of the model's own prediction
+            (e.g. to visualize "what would make this look defective").
+
+    Returns:
+        (predicted_label, confidence, heatmap, overlay) -- heatmap is a
+        float32 (H, W) array in [0, 1] at `image_size` resolution, overlay
+        is an RGB PIL.Image of the same size.
+    """
+    transform = build_eval_transforms(image_size)
+    input_tensor = transform(pil_image).unsqueeze(0).to(device)
+
+    heatmap_small, predicted_label, confidence = gradcam(input_tensor, class_idx=class_idx)
+
+    # Resize CAM (target layer's resolution, e.g. 7x7) up to the model's
+    # input resolution so it aligns pixel-for-pixel with what the model saw.
+    heatmap = F.interpolate(
+        torch.from_numpy(heatmap_small)[None, None],
+        size=image_size,
+        mode="bilinear",
+        align_corners=False,
+    )[0, 0].numpy()
+
+    # Background for the overlay: the resized (but not normalized) input
+    # image, so colors match what a human sees, not ImageNet-normalized values.
+    display_image = pil_image.resize((image_size[1], image_size[0]), Image.BILINEAR)
+    overlay = overlay_heatmap(display_image, heatmap)
+
+    return predicted_label, confidence, heatmap, overlay
 
 
 def explain_image(image_path, model, gradcam, image_size, device, class_idx=None):
@@ -156,24 +200,9 @@ def explain_image(image_path, model, gradcam, image_size, device, class_idx=None
     image_path = Path(image_path)
     pil_image = Image.open(image_path).convert("RGB")
 
-    transform = build_eval_transforms(image_size)
-    input_tensor = transform(pil_image).unsqueeze(0).to(device)
-
-    heatmap_small, predicted_label, confidence = gradcam(input_tensor, class_idx=class_idx)
-
-    # Resize CAM (target layer's resolution, e.g. 7x7) up to the model's
-    # input resolution so it aligns pixel-for-pixel with what the model saw.
-    heatmap = F.interpolate(
-        torch.from_numpy(heatmap_small)[None, None],
-        size=image_size,
-        mode="bilinear",
-        align_corners=False,
-    )[0, 0].numpy()
-
-    # Background for the overlay: the resized (but not normalized) input
-    # image, so colors match what a human sees, not ImageNet-normalized values.
-    display_image = pil_image.resize((image_size[1], image_size[0]), Image.BILINEAR)
-    overlay = _overlay_heatmap(display_image, heatmap)
+    predicted_label, confidence, heatmap, overlay = explain_pil_image(
+        pil_image, model, gradcam, image_size, device, class_idx=class_idx
+    )
 
     return GradCAMResult(
         image_path=str(image_path),
