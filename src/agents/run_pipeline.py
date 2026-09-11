@@ -39,6 +39,15 @@ def main():
         print(f"characterization.position:             {characterization.position}")
         print(f"characterization.confidence_tier:      {characterization.confidence_tier}")
 
+    root_cause = final_state["root_cause"]
+    print(f"root_cause.applicable: {root_cause.applicable}")
+    if root_cause.applicable:
+        print(f"root_cause.model:      {root_cause.model}")
+        print("root_cause.retrieved_entries:")
+        for entry in root_cause.retrieved_entries:
+            print(f"  - {entry['defect_type']} (distance={entry['distance']:.4f})")
+        print(f"root_cause.explanation:\n{root_cause.explanation}")
+
     print(f"agent_outputs: {sorted(final_state['agent_outputs'].keys())}")
 
     if args.out:

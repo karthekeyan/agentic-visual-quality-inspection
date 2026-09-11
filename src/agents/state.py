@@ -47,6 +47,11 @@ class InspectionState(TypedDict, total=False):
             label == 'defective'. See
             src.agents.characterization_agent.DefectCharacterization;
             always carries heuristic_approximation=True.
+        root_cause: set by the Root-Cause Agent -- a RAG-generated
+            explanation of likely process-related root causes, grounded
+            in a curated knowledge base, only meaningful when
+            defect_characterization.applicable is True. See
+            src.agents.root_cause_agent.RootCause.
         agent_outputs: every agent's structured output, keyed by agent
             name (e.g. "inspection_agent"), so later agents and the final
             report can see what earlier agents produced without depending
@@ -62,5 +67,6 @@ class InspectionState(TypedDict, total=False):
     overlay_image: Optional[Image.Image]
 
     defect_characterization: Optional[Any]
+    root_cause: Optional[Any]
 
     agent_outputs: Annotated[Dict[str, Any], _merge_agent_outputs]

@@ -26,6 +26,9 @@ data/interim/*
 data/external/*
 !data/**/.gitkeep
 
+# ChromaDB (derived -- rebuild with `python -m src.knowledge.ingest`)
+data/chroma_db/
+
 # Models / checkpoints
 models/checkpoints/*
 models/pretrained/*

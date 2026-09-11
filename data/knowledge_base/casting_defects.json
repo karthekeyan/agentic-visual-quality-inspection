@@ -1,0 +1,40 @@
+{
+  "entries": [
+    {
+      "defect_type": "Porosity / Blow holes",
+      "process_causes": "Gas entrapment from dissolved gases not escaping before solidification; excessive moisture in mold sand; inadequate venting; pouring temperature too low, trapping gas."
+    },
+    {
+      "defect_type": "Shrinkage defects",
+      "process_causes": "Insufficient feeding during solidification; poor riser design/placement; cooling rate too fast in thick sections; inadequate directional solidification."
+    },
+    {
+      "defect_type": "Cold shut",
+      "process_causes": "Two streams of molten metal meeting without fully fusing; pouring temperature too low; slow pouring rate; poor gating design causing metal to cool before merging."
+    },
+    {
+      "defect_type": "Cracks (hot tears)",
+      "process_causes": "Excessive shrinkage stress during solidification; mold too rigid, restricting contraction; incorrect alloy composition increasing hot-shortness; uneven cooling rates."
+    },
+    {
+      "defect_type": "Inclusions",
+      "process_causes": "Sand or slag entrapped in the metal during pouring; poor filtration; mold erosion during filling; dirty molten metal."
+    },
+    {
+      "defect_type": "Misrun",
+      "process_causes": "Metal solidified before completely filling the mold; pouring temperature too low; insufficient metal fluidity; gating system too restrictive."
+    },
+    {
+      "defect_type": "Surface roughness / burn-on",
+      "process_causes": "Sand mold surface too coarse; excessive pouring temperature causing sand-metal reaction; inadequate mold coating."
+    },
+    {
+      "defect_type": "Flash / Fin",
+      "process_causes": "Excess metal escaping at the mold parting line; worn or poorly clamped mold halves; excessive pouring pressure."
+    },
+    {
+      "defect_type": "Warping / Distortion",
+      "process_causes": "Uneven cooling rates across the part; residual stress from asymmetric wall thickness; premature mold removal."
+    }
+  ]
+}
