@@ -1,17 +1,18 @@
 """Tests for the agent graph:
-START -> inspection_agent -> characterization_agent -> root_cause_agent -> END.
+START -> inspection_agent -> characterization_agent -> root_cause_agent ->
+disposition_agent -> END.
 
 Checks that the graph runs end-to-end and structures each agent's output
 into state correctly -- not that the model's prediction is right, and not
 that the heuristic characterization is a "correct" diagnosis (there's no
 ground truth for that -- see src.agents.characterization_agent). The
-Inspection and Characterization Agents are intentionally simple (no
-reasoning/LLM calls in the former, no learned classification in the
-latter), so the contract to verify is: state in -> state out, correctly
-shaped. The Root-Cause Agent does call an LLM (Anthropic API) -- those
-tests mock the API call so they run offline, at no cost, and
-deterministically; ChromaDB retrieval itself is real (it's local,
-free, and part of what's being verified).
+Inspection, Characterization, and Disposition Agents are intentionally
+simple (no reasoning/LLM calls, no learned classification/policy), so the
+contract to verify is: state in -> state out, correctly shaped. The
+Root-Cause Agent does call an LLM (Anthropic API) -- those tests mock the
+API call so they run offline, at no cost, and deterministically; ChromaDB
+retrieval itself is real (it's local, free, and part of what's being
+verified).
 """
 
 from types import SimpleNamespace
@@ -24,6 +25,8 @@ from PIL import Image
 import src.agents.root_cause_agent as root_cause_agent
 from src.agents.characterization_agent import AGENT_NAME as CHARACTERIZATION_AGENT_NAME
 from src.agents.characterization_agent import DefectCharacterization
+from src.agents.disposition_agent import AGENT_NAME as DISPOSITION_AGENT_NAME
+from src.agents.disposition_agent import Disposition, decide_disposition
 from src.agents.graph import build_graph, get_graph
 from src.agents.inspection_agent import AGENT_NAME as INSPECTION_AGENT_NAME
 from src.agents.root_cause_agent import AGENT_NAME as ROOT_CAUSE_AGENT_NAME
@@ -33,6 +36,7 @@ from src.inference.predict import REPO
 TEST_IMAGE = REPO / "data/raw/casting_data/casting_data/test/def_front/cast_def_0_1063.jpeg"
 OK_IMAGE = REPO / "data/raw/casting_data/casting_data/test/ok_front/cast_ok_0_2927.jpeg"
 FALSE_NEGATIVE_IMAGE = REPO / "data/raw/casting_data/casting_data/test/def_front/cast_def_0_2102.jpeg"
+LOCALIZED_DEFECT_IMAGE = REPO / "data/raw/casting_data/casting_data/test/def_front/cast_def_0_108.jpeg"
 
 
 @pytest.fixture(scope="module")
@@ -247,3 +251,137 @@ def test_root_cause_retrieval_matches_knowledge_base():
     assert len(entries) == root_cause_agent.TOP_K
     for entry in entries:
         assert entry["defect_type"] in known_defect_types
+
+
+# --- Disposition Agent (Phase 6) ----------------------------------------
+
+
+def _mocked_root_cause_client():
+    """Patch target for graph runs on defective images -- the Root-Cause
+    Agent would otherwise make a real (costly) API call en route to the
+    Disposition Agent under test."""
+    return patch.object(root_cause_agent, "_get_client", return_value=_mock_anthropic_client("mocked explanation"))
+
+
+def test_disposition_accept_for_high_confidence_ok(graph):
+    final_state = graph.invoke({"image_path": str(OK_IMAGE)})
+    assert final_state["label"] == "ok"
+    assert final_state["confidence"] >= 0.90
+
+    disposition = final_state["disposition"]
+    assert isinstance(disposition, Disposition)
+    assert disposition.decision == "accept"
+    assert disposition.confidence_threshold_used == pytest.approx(0.90)
+    assert "accept" in disposition.reasoning.lower()
+
+    agent_output = final_state["agent_outputs"][DISPOSITION_AGENT_NAME]
+    assert agent_output["decision"] == "accept"
+
+
+def test_disposition_scrap_for_diffuse_high_confidence_defective(graph):
+    with _mocked_root_cause_client():
+        final_state = graph.invoke({"image_path": str(TEST_IMAGE)})
+
+    assert final_state["label"] == "defective"
+    assert final_state["confidence"] >= 0.90
+    assert final_state["defect_characterization"].region_size == "diffuse"
+
+    disposition = final_state["disposition"]
+    assert disposition.decision == "scrap"
+    assert "diffuse" in disposition.reasoning.lower()
+
+    agent_output = final_state["agent_outputs"][DISPOSITION_AGENT_NAME]
+    assert agent_output["decision"] == "scrap"
+
+
+def test_disposition_rework_for_localized_high_confidence_defective(graph):
+    with _mocked_root_cause_client():
+        final_state = graph.invoke({"image_path": str(LOCALIZED_DEFECT_IMAGE)})
+
+    assert final_state["label"] == "defective"
+    assert final_state["confidence"] >= 0.90
+    assert final_state["defect_characterization"].region_size == "concentrated"
+
+    disposition = final_state["disposition"]
+    assert disposition.decision == "rework"
+    assert "concentrated" in disposition.reasoning.lower()
+
+    agent_output = final_state["agent_outputs"][DISPOSITION_AGENT_NAME]
+    assert agent_output["decision"] == "rework"
+
+
+def test_disposition_escalate_for_low_confidence_ok_false_negative(graph):
+    """The known false negative (0.63 confidence, predicted 'ok'): below the
+    high-confidence threshold, so it must escalate rather than auto-accept --
+    this is precisely the case the escalate rule exists to catch."""
+    final_state = graph.invoke({"image_path": str(FALSE_NEGATIVE_IMAGE)})
+    assert final_state["label"] == "ok"
+    assert final_state["confidence"] < 0.90
+
+    disposition = final_state["disposition"]
+    assert disposition.decision == "escalate"
+    assert "escalate" in disposition.reasoning.lower() or "review" in disposition.reasoning.lower()
+
+
+def test_disposition_escalate_for_low_confidence_defective_synthetic():
+    """No naturally-occurring low-confidence defective example is on hand,
+    so this exercises the rule directly against a synthetic state via
+    decide_disposition() rather than through the graph."""
+    characterization = DefectCharacterization(
+        applicable=True,
+        category="localized_anomaly",
+        description="synthetic low-confidence case for testing",
+        region_size="concentrated",
+        position="centered",
+        confidence_tier="low",
+    )
+
+    disposition = decide_disposition(
+        label="defective",
+        confidence=0.55,
+        characterization=characterization,
+    )
+
+    assert disposition.decision == "escalate"
+    assert disposition.confidence_threshold_used == pytest.approx(0.90)
+
+
+def test_decide_disposition_reasoning_is_auditable():
+    """Every branch must explain which rule fired, not just the decision."""
+    accept = decide_disposition(label="ok", confidence=0.95)
+    assert isinstance(accept.reasoning, str) and len(accept.reasoning) > 0
+
+    scrap = decide_disposition(
+        label="defective",
+        confidence=0.95,
+        characterization=DefectCharacterization(
+            applicable=True, category="distributed_irregularity", description="", region_size="diffuse"
+        ),
+    )
+    assert "diffuse" in scrap.reasoning.lower()
+
+    rework = decide_disposition(
+        label="defective",
+        confidence=0.95,
+        characterization=DefectCharacterization(
+            applicable=True, category="localized_anomaly", description="", region_size="concentrated"
+        ),
+    )
+    assert "concentrated" in rework.reasoning.lower()
+
+
+def test_decide_disposition_honors_explicit_threshold_override():
+    """confidence_threshold_used should reflect whatever threshold was
+    actually applied -- config-driven by default, but overridable."""
+    disposition = decide_disposition(label="ok", confidence=0.80, high_confidence_threshold=0.75)
+    assert disposition.decision == "accept"
+    assert disposition.confidence_threshold_used == 0.75
+
+
+def test_disposition_config_default_threshold_matches_config_yaml():
+    """The default threshold is read from config/config.yaml, not hardcoded --
+    this pins that config/config.yaml: disposition.high_confidence_threshold
+    is actually wired up."""
+    from src.agents.disposition_agent import _high_confidence_threshold
+
+    assert _high_confidence_threshold() == pytest.approx(0.90)

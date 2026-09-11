@@ -36,3 +36,11 @@ inference:
 logging:
   log_dir: outputs/logs
   log_interval: 10
+
+disposition:
+  # Confidence at/above which the Disposition Agent trusts the Inspection
+  # Agent's label enough to make an automated accept/rework/scrap call;
+  # below it, the case is escalated for human review regardless of label.
+  # See src.agents.disposition_agent module docstring: authored policy,
+  # not fitted to any historical disposition-outcome data.
+  high_confidence_threshold: 0.90

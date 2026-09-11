@@ -52,6 +52,12 @@ class InspectionState(TypedDict, total=False):
             in a curated knowledge base, only meaningful when
             defect_characterization.applicable is True. See
             src.agents.root_cause_agent.RootCause.
+        disposition: set by the Disposition Agent -- a rule-based
+            accept/rework/scrap/escalate recommendation, always
+            meaningful (every prediction gets a disposition, unlike
+            defect_characterization/root_cause which only apply to
+            defective predictions). See
+            src.agents.disposition_agent.Disposition.
         agent_outputs: every agent's structured output, keyed by agent
             name (e.g. "inspection_agent"), so later agents and the final
             report can see what earlier agents produced without depending
@@ -68,5 +74,6 @@ class InspectionState(TypedDict, total=False):
 
     defect_characterization: Optional[Any]
     root_cause: Optional[Any]
+    disposition: Optional[Any]
 
     agent_outputs: Annotated[Dict[str, Any], _merge_agent_outputs]

@@ -1,8 +1,9 @@
 """The agent pipeline graph:
-START -> inspection_agent -> characterization_agent -> root_cause_agent -> END.
+START -> inspection_agent -> characterization_agent -> root_cause_agent ->
+disposition_agent -> END.
 
 This is where later phases wire in the next agents (e.g. a Reporting
-Agent) after root_cause_agent, so build_graph() is the single place that
+Agent) after disposition_agent, so build_graph() is the single place that
 defines how agents connect.
 """
 
@@ -10,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from src.agents.characterization_agent import characterization_agent
+from src.agents.disposition_agent import disposition_agent
 from src.agents.inspection_agent import inspection_agent
 from src.agents.root_cause_agent import root_cause_agent
 from src.agents.state import InspectionState
@@ -26,10 +28,12 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("inspection_agent", inspection_agent)
     graph.add_node("characterization_agent", characterization_agent)
     graph.add_node("root_cause_agent", root_cause_agent)
+    graph.add_node("disposition_agent", disposition_agent)
     graph.add_edge(START, "inspection_agent")
     graph.add_edge("inspection_agent", "characterization_agent")
     graph.add_edge("characterization_agent", "root_cause_agent")
-    graph.add_edge("root_cause_agent", END)
+    graph.add_edge("root_cause_agent", "disposition_agent")
+    graph.add_edge("disposition_agent", END)
     return graph.compile()
 
 

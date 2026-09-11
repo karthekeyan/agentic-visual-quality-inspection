@@ -48,6 +48,11 @@ def main():
             print(f"  - {entry['defect_type']} (distance={entry['distance']:.4f})")
         print(f"root_cause.explanation:\n{root_cause.explanation}")
 
+    disposition = final_state["disposition"]
+    print(f"disposition.decision:                 {disposition.decision}")
+    print(f"disposition.reasoning:                {disposition.reasoning}")
+    print(f"disposition.confidence_threshold_used: {disposition.confidence_threshold_used}")
+
     print(f"agent_outputs: {sorted(final_state['agent_outputs'].keys())}")
 
     if args.out:
