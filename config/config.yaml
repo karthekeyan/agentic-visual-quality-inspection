@@ -44,3 +44,13 @@ disposition:
   # See src.agents.disposition_agent module docstring: authored policy,
   # not fitted to any historical disposition-outcome data.
   high_confidence_threshold: 0.90
+
+trend:
+  # Recent-window defect_rate above which drift_flag is raised, and the
+  # max number of recent per-batch records that window is computed over.
+  # See src.agents.trend_agent module docstring: batch_id/timestamp are
+  # SIMULATED (this dataset has no real batch/line/timestamp metadata) --
+  # these numbers are an authored demonstration threshold, not fitted to
+  # real production drift data.
+  drift_threshold: 0.5
+  window_size: 20

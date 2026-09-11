@@ -58,6 +58,12 @@ class InspectionState(TypedDict, total=False):
             defect_characterization/root_cause which only apply to
             defective predictions). See
             src.agents.disposition_agent.Disposition.
+        trend: set by the Trend Agent -- recent-history defect_rate/
+            scrap_rate/drift_flag for this inspection's (SIMULATED)
+            batch, always meaningful. See src.agents.trend_agent.Trend;
+            note this dataset has no real batch/timestamp metadata, so
+            batch_id/simulated_timestamp are simulated for demonstration
+            -- see that module's docstring.
         agent_outputs: every agent's structured output, keyed by agent
             name (e.g. "inspection_agent"), so later agents and the final
             report can see what earlier agents produced without depending
@@ -75,5 +81,6 @@ class InspectionState(TypedDict, total=False):
     defect_characterization: Optional[Any]
     root_cause: Optional[Any]
     disposition: Optional[Any]
+    trend: Optional[Any]
 
     agent_outputs: Annotated[Dict[str, Any], _merge_agent_outputs]

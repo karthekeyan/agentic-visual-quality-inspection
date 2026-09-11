@@ -23,6 +23,7 @@ import pytest
 from PIL import Image
 
 import src.agents.root_cause_agent as root_cause_agent
+import src.agents.trend_agent as trend_agent_module
 from src.agents.characterization_agent import AGENT_NAME as CHARACTERIZATION_AGENT_NAME
 from src.agents.characterization_agent import DefectCharacterization
 from src.agents.disposition_agent import AGENT_NAME as DISPOSITION_AGENT_NAME
@@ -31,6 +32,16 @@ from src.agents.graph import build_graph, get_graph
 from src.agents.inspection_agent import AGENT_NAME as INSPECTION_AGENT_NAME
 from src.agents.root_cause_agent import AGENT_NAME as ROOT_CAUSE_AGENT_NAME
 from src.agents.root_cause_agent import MODEL_ID, RootCause
+from src.agents.trend_agent import AGENT_NAME as TREND_AGENT_NAME
+from src.agents.trend_agent import (
+    BATCH_IDS,
+    Trend,
+    append_history_record,
+    build_history_record,
+    compute_trend,
+    read_history,
+    trend_agent,
+)
 from src.inference.predict import REPO
 
 TEST_IMAGE = REPO / "data/raw/casting_data/casting_data/test/def_front/cast_def_0_1063.jpeg"
@@ -385,3 +396,206 @@ def test_disposition_config_default_threshold_matches_config_yaml():
     from src.agents.disposition_agent import _high_confidence_threshold
 
     assert _high_confidence_threshold() == pytest.approx(0.90)
+
+
+# --- Trend Agent (Phase 7) ------------------------------------------------
+#
+# batch_id/simulated_timestamp are SIMULATED -- see src.agents.trend_agent
+# module docstring; this dataset has no real batch/line/timestamp metadata.
+#
+# The defect_rate/scrap_rate/drift_flag tests below seed a temporary
+# history file (pytest's tmp_path) rather than touching the real
+# outputs/logs/inspection_history.jsonl, per the phase requirement not to
+# pollute that log with synthetic rate-calculation data.
+
+
+def _synthetic_record(label: str, disposition_decision: str, batch_id: str = "batch_A") -> dict:
+    return {
+        "image_path": f"synthetic_{label}.jpeg",
+        "label": label,
+        "confidence": 0.95,
+        "disposition_decision": disposition_decision,
+        "batch_id": batch_id,
+        "simulated_timestamp": "2026-01-01T00:00:00+00:00",
+    }
+
+
+def test_trend_build_history_record_shape(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    state = {
+        "image_path": "some/image.jpeg",
+        "label": "defective",
+        "confidence": 0.97,
+        "disposition": Disposition(decision="scrap", reasoning="test", confidence_threshold_used=0.9),
+    }
+
+    record = build_history_record(state, path=history_path)
+
+    assert record["image_path"] == "some/image.jpeg"
+    assert record["label"] == "defective"
+    assert record["confidence"] == 0.97
+    assert record["disposition_decision"] == "scrap"
+    assert record["batch_id"] in BATCH_IDS
+
+    from datetime import datetime
+
+    datetime.fromisoformat(record["simulated_timestamp"])  # parseable ISO timestamp
+
+
+def test_trend_append_and_read_history_roundtrip(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    assert read_history(history_path) == []  # no file yet -- first run
+
+    record1 = _synthetic_record("ok", "accept")
+    record2 = _synthetic_record("defective", "rework")
+    append_history_record(record1, path=history_path)
+    append_history_record(record2, path=history_path)
+
+    assert read_history(history_path) == [record1, record2]
+
+
+def test_trend_batch_assignment_round_robins(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    state = {"image_path": "x.jpeg", "label": "ok", "confidence": 0.99, "disposition": None}
+
+    assigned = []
+    for _ in range(len(BATCH_IDS) * 2):
+        record = build_history_record(state, path=history_path)
+        append_history_record(record, path=history_path)
+        assigned.append(record["batch_id"])
+
+    assert assigned == BATCH_IDS + BATCH_IDS
+
+
+def test_trend_compute_defect_and_scrap_rate(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    for record in [
+        _synthetic_record("defective", "scrap"),
+        _synthetic_record("defective", "rework"),
+        _synthetic_record("ok", "accept"),
+        _synthetic_record("ok", "accept"),
+    ]:
+        append_history_record(record, path=history_path)
+
+    trend = compute_trend("batch_A", path=history_path)
+
+    assert trend.batch_id == "batch_A"
+    assert trend.sample_size == 4
+    assert trend.defect_rate == pytest.approx(0.5)  # 2/4 defective
+    assert trend.scrap_rate == pytest.approx(0.25)  # 1/4 scrap
+    assert "simulated" in trend.note.lower()
+
+
+def test_trend_compute_ignores_other_batches(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    append_history_record(_synthetic_record("defective", "scrap", batch_id="batch_A"), path=history_path)
+    append_history_record(_synthetic_record("defective", "scrap", batch_id="batch_B"), path=history_path)
+    append_history_record(_synthetic_record("defective", "scrap", batch_id="batch_B"), path=history_path)
+
+    assert compute_trend("batch_A", path=history_path).sample_size == 1
+    assert compute_trend("batch_B", path=history_path).sample_size == 2
+
+
+def test_trend_drift_flag_triggers_above_default_threshold(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    # 3/5 defective = 0.6 > default 0.5 threshold
+    for label in ["defective", "defective", "defective", "ok", "ok"]:
+        append_history_record(_synthetic_record(label, "n/a"), path=history_path)
+
+    trend = compute_trend("batch_A", path=history_path)
+    assert trend.defect_rate == pytest.approx(0.6)
+    assert trend.drift_flag is True
+
+
+def test_trend_drift_flag_does_not_trigger_below_threshold(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    # 2/5 defective = 0.4 < default 0.5 threshold
+    for label in ["defective", "defective", "ok", "ok", "ok"]:
+        append_history_record(_synthetic_record(label, "n/a"), path=history_path)
+
+    trend = compute_trend("batch_A", path=history_path)
+    assert trend.defect_rate == pytest.approx(0.4)
+    assert trend.drift_flag is False
+
+
+def test_trend_drift_threshold_is_configurable_override(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    # 2/5 = 0.4 defect_rate; wouldn't trigger the default 0.5 threshold,
+    # but should trigger an explicit, lower override -- proves the
+    # threshold isn't hardcoded.
+    for label in ["defective", "defective", "ok", "ok", "ok"]:
+        append_history_record(_synthetic_record(label, "n/a"), path=history_path)
+
+    trend = compute_trend("batch_A", path=history_path, drift_threshold=0.3)
+    assert trend.drift_flag is True
+
+
+def test_trend_sample_size_caps_at_window_size(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    for _ in range(10):
+        append_history_record(_synthetic_record("ok", "accept"), path=history_path)
+
+    trend = compute_trend("batch_A", path=history_path, window_size=3)
+    assert trend.sample_size == 3
+
+
+def test_trend_compute_on_empty_history_is_zero_not_error(tmp_path):
+    history_path = tmp_path / "history.jsonl"
+    trend = compute_trend("batch_A", path=history_path)
+    assert trend.sample_size == 0
+    assert trend.defect_rate == 0.0
+    assert trend.scrap_rate == 0.0
+    assert trend.drift_flag is False
+
+
+def test_trend_agent_node_writes_history_and_returns_state(tmp_path, monkeypatch):
+    """Exercises the full trend_agent() node function -- history append +
+    trend computation -- against a temporary history file (monkeypatched
+    module-level HISTORY_PATH), so this never touches the real
+    outputs/logs/inspection_history.jsonl."""
+    history_path = tmp_path / "history.jsonl"
+    monkeypatch.setattr(trend_agent_module, "HISTORY_PATH", history_path)
+
+    state = {
+        "image_path": "synthetic.jpeg",
+        "label": "defective",
+        "confidence": 0.93,
+        "disposition": Disposition(decision="scrap", reasoning="test", confidence_threshold_used=0.9),
+    }
+
+    result = trend_agent(state)
+
+    assert "trend" in result
+    trend = result["trend"]
+    assert isinstance(trend, Trend)
+    assert trend.batch_id in BATCH_IDS
+    assert trend.sample_size == 1
+    assert trend.defect_rate == pytest.approx(1.0)
+    assert trend.scrap_rate == pytest.approx(1.0)
+
+    agent_output = result["agent_outputs"][TREND_AGENT_NAME]
+    assert agent_output["batch_id"] == trend.batch_id
+
+    records = read_history(history_path)
+    assert len(records) == 1
+    assert records[0]["image_path"] == "synthetic.jpeg"
+    assert records[0]["disposition_decision"] == "scrap"
+
+
+def test_trend_field_populated_end_to_end(graph):
+    """Runs the real compiled graph -- this legitimately appends to the
+    real outputs/logs/inspection_history.jsonl, the same as any other
+    pipeline run through this graph (see run_pipeline.py); it is not
+    seeding synthetic rate-calculation data into that file."""
+    final_state = graph.invoke({"image_path": str(OK_IMAGE)})
+
+    trend = final_state["trend"]
+    assert isinstance(trend, Trend)
+    assert trend.batch_id in BATCH_IDS
+    assert trend.sample_size >= 1
+    assert 0.0 <= trend.defect_rate <= 1.0
+    assert 0.0 <= trend.scrap_rate <= 1.0
+    assert "simulated" in trend.note.lower()
+
+    agent_output = final_state["agent_outputs"][TREND_AGENT_NAME]
+    assert agent_output["batch_id"] == trend.batch_id

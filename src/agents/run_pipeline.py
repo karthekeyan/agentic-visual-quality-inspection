@@ -53,6 +53,14 @@ def main():
     print(f"disposition.reasoning:                {disposition.reasoning}")
     print(f"disposition.confidence_threshold_used: {disposition.confidence_threshold_used}")
 
+    trend = final_state["trend"]
+    print(f"trend.batch_id (SIMULATED):    {trend.batch_id}")
+    print(f"trend.defect_rate:              {trend.defect_rate:.4f}")
+    print(f"trend.scrap_rate:               {trend.scrap_rate:.4f}")
+    print(f"trend.drift_flag:               {trend.drift_flag}")
+    print(f"trend.sample_size:              {trend.sample_size}")
+    print(f"trend.note:                     {trend.note}")
+
     print(f"agent_outputs: {sorted(final_state['agent_outputs'].keys())}")
 
     if args.out:

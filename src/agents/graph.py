@@ -1,9 +1,9 @@
 """The agent pipeline graph:
 START -> inspection_agent -> characterization_agent -> root_cause_agent ->
-disposition_agent -> END.
+disposition_agent -> trend_agent -> END.
 
 This is where later phases wire in the next agents (e.g. a Reporting
-Agent) after disposition_agent, so build_graph() is the single place that
+Agent) after trend_agent, so build_graph() is the single place that
 defines how agents connect.
 """
 
@@ -15,6 +15,7 @@ from src.agents.disposition_agent import disposition_agent
 from src.agents.inspection_agent import inspection_agent
 from src.agents.root_cause_agent import root_cause_agent
 from src.agents.state import InspectionState
+from src.agents.trend_agent import trend_agent
 
 
 def build_graph() -> CompiledStateGraph:
@@ -29,11 +30,13 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("characterization_agent", characterization_agent)
     graph.add_node("root_cause_agent", root_cause_agent)
     graph.add_node("disposition_agent", disposition_agent)
+    graph.add_node("trend_agent", trend_agent)
     graph.add_edge(START, "inspection_agent")
     graph.add_edge("inspection_agent", "characterization_agent")
     graph.add_edge("characterization_agent", "root_cause_agent")
     graph.add_edge("root_cause_agent", "disposition_agent")
-    graph.add_edge("disposition_agent", END)
+    graph.add_edge("disposition_agent", "trend_agent")
+    graph.add_edge("trend_agent", END)
     return graph.compile()
 
 
