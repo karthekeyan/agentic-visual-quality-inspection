@@ -52,6 +52,7 @@ def main():
     print(f"disposition.decision:                 {disposition.decision}")
     print(f"disposition.reasoning:                {disposition.reasoning}")
     print(f"disposition.confidence_threshold_used: {disposition.confidence_threshold_used}")
+    print(f"human_review_required:                {final_state.get('human_review_required', False)}")
 
     trend = final_state["trend"]
     print(f"trend.batch_id (SIMULATED):    {trend.batch_id}")
@@ -62,6 +63,14 @@ def main():
     print(f"trend.note:                     {trend.note}")
 
     print(f"agent_outputs: {sorted(final_state['agent_outputs'].keys())}")
+
+    errors = final_state.get("errors") or []
+    if errors:
+        print(f"errors: {len(errors)} agent(s) failed during this run:")
+        for e in errors:
+            print(f"  - {e['agent']}: {e['error']}")
+    else:
+        print("errors: none")
 
     report = final_state["report"]
     print()

@@ -96,11 +96,23 @@ def test_graph_records_inspection_agent_output(graph):
     assert agent_output["confidence"] == final_state["confidence"]
 
 
-def test_graph_propagates_predict_errors(graph):
-    """No error-handling logic in these agents yet -- predict()'s
-    validation errors should surface unchanged through graph.invoke()."""
-    with pytest.raises(FileNotFoundError):
-        graph.invoke({"image_path": str(REPO / "data/raw/does_not_exist.jpeg")})
+def test_graph_catches_predict_errors_instead_of_raising(graph):
+    """Phase 9 (src.agents.orchestrator): every node is wrapped, so
+    predict()'s FileNotFoundError for a missing image must be caught and
+    recorded in state['errors'] rather than propagating out of
+    graph.invoke() -- see test_orchestrator_error_resilience below for
+    the full-pipeline-continues case."""
+    final_state = graph.invoke({"image_path": str(REPO / "data/raw/does_not_exist.jpeg")})
+
+    assert "label" not in final_state or final_state.get("label") is None
+
+    errors = final_state["errors"]
+    assert len(errors) >= 1
+    assert errors[0]["agent"] == "inspection_agent"
+    assert "FileNotFoundError" in errors[0]["error"]
+
+    agent_output = final_state["agent_outputs"]["inspection_agent"]
+    assert agent_output["failed"] is True
 
 
 # --- Characterization Agent (Phase 4) ---------------------------------
@@ -731,3 +743,71 @@ def test_reporting_agent_node_writes_to_isolated_dir(tmp_path, monkeypatch):
 
     agent_output = result["agent_outputs"][REPORTING_AGENT_NAME]
     assert agent_output["image_path"] == "synthetic.jpeg"
+
+
+# --- Phase 9: Orchestrator -- escalation handling, error resilience --------
+
+
+def test_human_review_required_true_on_escalate(graph):
+    """The known false negative escalates (0.63 confidence 'ok', below the
+    0.90 threshold) -- human_review_required must be set at the top level
+    of state, not left as something only visible inside disposition."""
+    final_state = graph.invoke({"image_path": str(FALSE_NEGATIVE_IMAGE)})
+
+    assert final_state["disposition"].decision == "escalate"
+    assert final_state["human_review_required"] is True
+    assert final_state["report"].human_review_required is True
+    assert final_state["report"].summary_text.startswith("[HUMAN REVIEW REQUIRED] ")
+
+
+def test_human_review_required_false_when_not_escalated(graph):
+    final_state = graph.invoke({"image_path": str(OK_IMAGE)})
+
+    assert final_state["disposition"].decision != "escalate"
+    assert final_state["human_review_required"] is False
+    assert final_state["report"].human_review_required is False
+    assert not final_state["report"].summary_text.startswith("[HUMAN REVIEW REQUIRED]")
+
+
+def test_orchestrator_root_cause_failure_does_not_crash_pipeline(graph):
+    """Simulates an Anthropic API failure (e.g. a network timeout) inside
+    root_cause_agent. The pipeline must not raise out of graph.invoke():
+    the failure is caught, recorded in state['errors'], and downstream
+    agents that don't depend on root_cause (disposition_agent, trend_agent,
+    reporting_agent) still run and produce a real result -- see
+    src.agents.orchestrator module docstring."""
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = ConnectionError("simulated Anthropic API network failure")
+
+    with patch.object(root_cause_agent, "_get_client", return_value=mock_client):
+        final_state = graph.invoke({"image_path": str(TEST_IMAGE)})  # a defective image
+
+    assert final_state["label"] == "defective"
+    assert final_state["defect_characterization"].applicable is True
+
+    # root_cause_agent failed -- no root_cause result was ever set.
+    assert final_state.get("root_cause") is None
+
+    # ... but the error is recorded clearly, not swallowed silently.
+    errors = final_state["errors"]
+    assert len(errors) == 1
+    assert errors[0]["agent"] == "root_cause_agent"
+    assert "simulated Anthropic API network failure" in errors[0]["error"]
+
+    agent_output = final_state["agent_outputs"][ROOT_CAUSE_AGENT_NAME]
+    assert agent_output["failed"] is True
+
+    # Disposition never reads root_cause, so it still produced a real,
+    # non-error decision using just label/confidence/characterization.
+    disposition = final_state["disposition"]
+    assert isinstance(disposition, Disposition)
+    assert disposition.decision in ("accept", "rework", "scrap", "escalate")
+
+    # Trend and Reporting also completed -- the pipeline reached END.
+    assert final_state["trend"] is not None
+    report = final_state["report"]
+    assert isinstance(report, Report)
+    assert report.root_cause is None  # not available, not fabricated
+    assert report.errors == errors
+    assert "root_cause_agent" in report.summary_text
+    assert "pipeline error" in report.summary_text.lower()

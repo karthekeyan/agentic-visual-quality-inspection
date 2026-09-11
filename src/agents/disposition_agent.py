@@ -140,8 +140,13 @@ def disposition_agent(state: InspectionState) -> Dict[str, Any]:
     authored decision policy above. Unlike the Characterization and
     Root-Cause Agents, this node always produces a decision -- there is no
     not-applicable case, since every prediction (ok or defective) needs a
-    disposition. Returns a partial state update -- LangGraph merges it
-    into the full graph state -- rather than mutating `state` in place.
+    disposition. Notably does NOT read `root_cause` -- so a Root-Cause
+    Agent failure (see src.agents.orchestrator) never blocks a
+    disposition from being made. Also sets `human_review_required`
+    (True iff decision == 'escalate') as its own top-level state field --
+    see src.agents.state and src.agents.reporting_agent. Returns a
+    partial state update -- LangGraph merges it into the full graph
+    state -- rather than mutating `state` in place.
     """
     result = decide_disposition(
         label=state["label"],
@@ -151,5 +156,6 @@ def disposition_agent(state: InspectionState) -> Dict[str, Any]:
 
     return {
         "disposition": result,
+        "human_review_required": result.decision == "escalate",
         "agent_outputs": {AGENT_NAME: asdict(result)},
     }

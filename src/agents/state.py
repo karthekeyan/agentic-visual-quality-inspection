@@ -7,7 +7,7 @@ state (see src.agents.graph), so nodes never need the rest of the state
 just to pass it through.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from PIL import Image
@@ -26,6 +26,13 @@ def _merge_agent_outputs(left: Optional[Dict[str, Any]], right: Optional[Dict[st
     merged = dict(left or {})
     merged.update(right or {})
     return merged
+
+
+def _merge_errors(left: Optional[List[Dict[str, Any]]], right: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Reducer for `errors` -- concatenates rather than replacing, since more
+    than one node can fail for the same image (see src.agents.orchestrator)
+    and every failure needs to stay visible, not just the last one."""
+    return (left or []) + (right or [])
 
 
 class InspectionState(TypedDict, total=False):
@@ -73,7 +80,26 @@ class InspectionState(TypedDict, total=False):
         agent_outputs: every agent's structured output, keyed by agent
             name (e.g. "inspection_agent"), so later agents and the final
             report can see what earlier agents produced without depending
-            on the top-level field names above.
+            on the top-level field names above. A failed agent (see
+            src.agents.orchestrator) records {"error": ..., "failed":
+            True} here instead of its normal output.
+        human_review_required: set by the Disposition Agent -- True iff
+            disposition.decision == 'escalate', False otherwise. Exists
+            as its own top-level boolean (rather than making callers
+            compare disposition.decision == 'escalate' themselves) so an
+            escalation can't be missed by only skimming the disposition
+            field -- see src.agents.reporting_agent, which leads the
+            summary_text with a '[HUMAN REVIEW REQUIRED]' flag when set.
+        errors: set by src.agents.orchestrator.wrap_node whenever a node
+            raises -- one {"agent": <node name>, "error": <message>}
+            record per failure, appended (not replaced) across nodes so
+            more than one agent failing on the same image stays visible.
+            Empty/absent when nothing failed. Downstream agents keep
+            running where they can (e.g. disposition_agent doesn't read
+            root_cause, so a root_cause_agent failure doesn't block it);
+            an agent that genuinely can't proceed without the missing
+            data will itself raise and be caught the same way, rather
+            than crashing graph.invoke() for the whole pipeline.
     """
 
     image_path: str
@@ -90,4 +116,7 @@ class InspectionState(TypedDict, total=False):
     trend: Optional[Any]
     report: Optional[Any]
 
+    human_review_required: Optional[bool]
+
     agent_outputs: Annotated[Dict[str, Any], _merge_agent_outputs]
+    errors: Annotated[List[Dict[str, Any]], _merge_errors]

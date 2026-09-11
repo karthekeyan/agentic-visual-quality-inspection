@@ -16,10 +16,10 @@ warning from src.agents.trend_agent; this agent doesn't strip it.
 """
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from src.agents.state import InspectionState
 
@@ -38,6 +38,12 @@ class Report:
     not-applicable filler, since the report is meant to be read quickly.
     `saved_path` is filled in by save_report() after the JSON file is
     written, so the file includes its own location for traceability.
+    `human_review_required` mirrors state['human_review_required'] (see
+    src.agents.disposition_agent/src.agents.orchestrator) -- also
+    reflected as a leading flag in summary_text, so it can't be missed by
+    only reading the disposition field. `errors` mirrors
+    state['errors'] -- any agent that failed for this image (see
+    src.agents.orchestrator) -- empty when nothing failed.
     """
 
     image_path: str
@@ -47,7 +53,9 @@ class Report:
     root_cause: Optional[Dict[str, Any]]
     disposition: Dict[str, Any]
     trend: Dict[str, Any]
+    human_review_required: bool
     summary_text: str
+    errors: List[Dict[str, Any]] = field(default_factory=list)
     saved_path: Optional[str] = None
 
 
@@ -101,10 +109,19 @@ def _build_summary_text(
     root_cause_dict: Optional[Dict[str, Any]],
     disposition_dict: Dict[str, Any],
     trend_dict: Dict[str, Any],
+    human_review_required: bool = False,
+    errors: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """A few plain-text sentences, not a data dump -- everything a quality
     engineer needs from a 10-second read, with the full detail still
-    available in the structured fields alongside it."""
+    available in the structured fields alongside it.
+
+    When `human_review_required` is True (disposition.decision ==
+    'escalate'), the summary leads with a '[HUMAN REVIEW REQUIRED]' flag
+    rather than leaving escalation as just one value among four in the
+    disposition sentence below -- see src.agents.orchestrator module
+    docstring, "Escalation handling".
+    """
     image_name = Path(image_path).name
     sentences = [f"Inspection of {image_name}: predicted {label.upper()} with {confidence * 100:.1f}% confidence."]
 
@@ -130,7 +147,17 @@ def _build_summary_text(
         f"over the last {trend_dict['sample_size']} part(s).{drift_note}"
     )
 
-    return " ".join(sentences)
+    if errors:
+        failed_agents = ", ".join(e["agent"] for e in errors)
+        sentences.append(
+            f"NOTE: {len(errors)} pipeline error(s) occurred during processing ({failed_agents}) -- "
+            f"see report.errors for detail; affected fields may be incomplete."
+        )
+
+    summary = " ".join(sentences)
+    if human_review_required:
+        summary = f"[HUMAN REVIEW REQUIRED] {summary}"
+    return summary
 
 
 def build_report(state: InspectionState) -> Report:
@@ -140,6 +167,8 @@ def build_report(state: InspectionState) -> Report:
     root_cause_dict = _root_cause_dict(state.get("root_cause"))
     disposition_dict = _disposition_dict(state["disposition"])
     trend_dict = _trend_dict(state["trend"])
+    human_review_required = bool(state.get("human_review_required", False))
+    errors = state.get("errors") or []
 
     summary_text = _build_summary_text(
         image_path=state["image_path"],
@@ -149,6 +178,8 @@ def build_report(state: InspectionState) -> Report:
         root_cause_dict=root_cause_dict,
         disposition_dict=disposition_dict,
         trend_dict=trend_dict,
+        human_review_required=human_review_required,
+        errors=errors,
     )
 
     return Report(
@@ -159,7 +190,9 @@ def build_report(state: InspectionState) -> Report:
         root_cause=root_cause_dict,
         disposition=disposition_dict,
         trend=trend_dict,
+        human_review_required=human_review_required,
         summary_text=summary_text,
+        errors=list(errors),
     )
 
 
