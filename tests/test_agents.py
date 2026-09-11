@@ -15,6 +15,8 @@ retrieval itself is real (it's local, free, and part of what's being
 verified).
 """
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -42,6 +44,8 @@ from src.agents.trend_agent import (
     read_history,
     trend_agent,
 )
+from src.agents.reporting_agent import AGENT_NAME as REPORTING_AGENT_NAME
+from src.agents.reporting_agent import Report
 from src.inference.predict import REPO
 
 TEST_IMAGE = REPO / "data/raw/casting_data/casting_data/test/def_front/cast_def_0_1063.jpeg"
@@ -599,3 +603,131 @@ def test_trend_field_populated_end_to_end(graph):
 
     agent_output = final_state["agent_outputs"][TREND_AGENT_NAME]
     assert agent_output["batch_id"] == trend.batch_id
+
+
+# --- Reporting Agent (Phase 8) ---------------------------------------------
+
+
+def test_report_compiled_for_defective_case(graph):
+    with _mocked_root_cause_client():
+        final_state = graph.invoke({"image_path": str(TEST_IMAGE)})
+
+    assert final_state["label"] == "defective"
+    report = final_state["report"]
+    assert isinstance(report, Report)
+    assert report.image_path == str(TEST_IMAGE)
+
+    assert report.inspection["label"] == "defective"
+    assert report.inspection["confidence"] == final_state["confidence"]
+
+    assert report.characterization is not None
+    assert report.characterization["category"] == final_state["defect_characterization"].category
+    assert report.characterization["region_size"] == final_state["defect_characterization"].region_size
+
+    assert report.root_cause is not None
+    assert report.root_cause["explanation"] == final_state["root_cause"].explanation
+    assert report.root_cause["retrieved_entries"] == final_state["root_cause"].retrieved_entries
+
+    assert report.disposition["decision"] == final_state["disposition"].decision
+    assert report.disposition["reasoning"] == final_state["disposition"].reasoning
+
+    assert report.trend["batch_id"] == final_state["trend"].batch_id
+    assert report.trend["sample_size"] == final_state["trend"].sample_size
+
+    assert isinstance(report.summary_text, str) and report.summary_text
+    assert "DEFECTIVE" in report.summary_text
+    assert report.disposition["decision"].upper() in report.summary_text
+    assert "few sentences" not in report.summary_text  # sanity: not a template artifact
+
+    # Regression check: summary_text must not name a specific defect type
+    # re-derived from retrieved_entries[0] (nearest by embedding distance)
+    # -- that ranking isn't necessarily what root_cause.explanation actually
+    # concluded (real example: retrieved_entries[0] was 'Misrun' while the
+    # explanation's primary hypothesis was 'Porosity / Blow holes'). The
+    # summary should point to the explanation instead of asserting a
+    # defect type of its own.
+    assert "root_cause.explanation" in report.summary_text
+    for entry in report.root_cause["retrieved_entries"]:
+        assert entry["defect_type"] not in report.summary_text
+
+    agent_output = final_state["agent_outputs"][REPORTING_AGENT_NAME]
+    assert agent_output["summary_text"] == report.summary_text
+    assert agent_output["characterization"]["category"] == report.characterization["category"]
+
+
+def test_report_compiled_for_ok_case(graph):
+    final_state = graph.invoke({"image_path": str(OK_IMAGE)})
+    assert final_state["label"] == "ok"
+
+    report = final_state["report"]
+    assert isinstance(report, Report)
+
+    # Not-applicable fields are absent (None), not padded with filler.
+    assert report.characterization is None
+    assert report.root_cause is None
+
+    assert report.disposition["decision"] == "accept"
+    assert "OK" in report.summary_text
+    assert "root cause" not in report.summary_text.lower()
+
+    agent_output = final_state["agent_outputs"][REPORTING_AGENT_NAME]
+    assert agent_output["characterization"] is None
+    assert agent_output["root_cause"] is None
+
+
+def test_report_saved_to_disk_matches_state(graph):
+    final_state = graph.invoke({"image_path": str(OK_IMAGE)})
+    report = final_state["report"]
+
+    assert report.saved_path is not None
+    saved_path = Path(report.saved_path)
+    assert saved_path.exists()
+    assert saved_path.parent == REPO / "outputs/reports/inspections"
+    assert saved_path.name.endswith(f"_{Path(str(OK_IMAGE)).stem}.json")
+
+    with open(saved_path) as f:
+        on_disk = json.load(f)
+
+    assert on_disk["summary_text"] == report.summary_text
+    assert on_disk["image_path"] == report.image_path
+    assert on_disk["saved_path"] == report.saved_path
+    assert on_disk["disposition"]["decision"] == report.disposition["decision"]
+
+
+def test_reporting_agent_node_writes_to_isolated_dir(tmp_path, monkeypatch):
+    """Exercises the reporting_agent() node function directly against a
+    temporary reports directory (monkeypatched module-level REPORTS_DIR),
+    so this never adds a synthetic record to the real
+    outputs/reports/inspections/."""
+    import src.agents.reporting_agent as reporting_agent_module
+
+    monkeypatch.setattr(reporting_agent_module, "REPORTS_DIR", tmp_path)
+
+    state = {
+        "image_path": "synthetic.jpeg",
+        "label": "ok",
+        "confidence": 0.99,
+        "defect_characterization": None,
+        "root_cause": None,
+        "disposition": Disposition(decision="accept", reasoning="test reasoning", confidence_threshold_used=0.9),
+        "trend": Trend(batch_id="batch_A", defect_rate=0.1, scrap_rate=0.0, drift_flag=False, sample_size=5),
+    }
+
+    result = reporting_agent_module.reporting_agent(state)
+
+    report = result["report"]
+    assert isinstance(report, Report)
+    assert report.saved_path is not None
+
+    saved_files = list(tmp_path.glob("*.json"))
+    assert len(saved_files) == 1
+    assert Path(report.saved_path) == saved_files[0]
+
+    with open(saved_files[0]) as f:
+        on_disk = json.load(f)
+    assert on_disk["image_path"] == "synthetic.jpeg"
+    assert on_disk["characterization"] is None
+    assert on_disk["disposition"]["decision"] == "accept"
+
+    agent_output = result["agent_outputs"][REPORTING_AGENT_NAME]
+    assert agent_output["image_path"] == "synthetic.jpeg"

@@ -64,6 +64,12 @@ class InspectionState(TypedDict, total=False):
             note this dataset has no real batch/timestamp metadata, so
             batch_id/simulated_timestamp are simulated for demonstration
             -- see that module's docstring.
+        report: set by the Reporting Agent -- the final compiled
+            inspection record (structured fields + a short human-readable
+            summary_text), also persisted as JSON under
+            outputs/reports/inspections/. Pure formatting of what the
+            other agents already produced -- see
+            src.agents.reporting_agent.Report.
         agent_outputs: every agent's structured output, keyed by agent
             name (e.g. "inspection_agent"), so later agents and the final
             report can see what earlier agents produced without depending
@@ -82,5 +88,6 @@ class InspectionState(TypedDict, total=False):
     root_cause: Optional[Any]
     disposition: Optional[Any]
     trend: Optional[Any]
+    report: Optional[Any]
 
     agent_outputs: Annotated[Dict[str, Any], _merge_agent_outputs]

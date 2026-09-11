@@ -63,6 +63,15 @@ def main():
 
     print(f"agent_outputs: {sorted(final_state['agent_outputs'].keys())}")
 
+    report = final_state["report"]
+    print()
+    print("=" * 72)
+    print("INSPECTION SUMMARY")
+    print("=" * 72)
+    print(report.summary_text)
+    print("=" * 72)
+    print(f"Full report saved to: {report.saved_path}")
+
     if args.out:
         from pathlib import Path
 
