@@ -185,7 +185,11 @@ def build_report(state: InspectionState) -> Report:
     return Report(
         image_path=state["image_path"],
         generated_at=datetime.now(timezone.utc).isoformat(),
-        inspection={"label": state["label"], "confidence": state["confidence"]},
+        inspection={
+            "label": state["label"],
+            "confidence": state["confidence"],
+            "bounding_box": state.get("bounding_box"),
+        },
         characterization=characterization_dict,
         root_cause=root_cause_dict,
         disposition=disposition_dict,

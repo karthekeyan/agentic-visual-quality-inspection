@@ -46,6 +46,7 @@ def inspection_agent(state: InspectionState) -> Dict[str, Any]:
         "raw_logits": result.raw_logits,
         "heatmap": result.heatmap,
         "overlay_image": result.overlay_image,
+        "bounding_box": result.bounding_box,
     }
 
     return {

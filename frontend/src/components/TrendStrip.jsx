@@ -25,11 +25,13 @@ function TrendStrip({ trend }) {
   return (
     <section className="trend-strip">
       <div className="trend-header">
-        <span>
-          Batch <span className="numeric">{trend.batch_id}</span>
-        </span>
+        <span>Recent inspection trend (last 20)</span>
         <span className="numeric">n={trend.sample_size}</span>
       </div>
+
+      <p className="trend-subhead">
+        Rolling stats across recent inspections — not specific to the image above.
+      </p>
 
       <div className="trend-bars">
         <BarIndicator label="Defect rate" value={trend.defect_rate} tone="amber" />

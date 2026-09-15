@@ -28,6 +28,7 @@ from PIL import Image, UnidentifiedImageError
 from src.inference.gradcam import (
     CLASS_NAMES,
     GradCAM,
+    compute_bounding_box,
     explain_pil_image,
     load_model_for_gradcam,
 )
@@ -68,6 +69,12 @@ class PredictionResult:
     raw_logits: np.ndarray  # shape (num_classes,), pre-softmax
     heatmap: np.ndarray  # float32 (H, W) in [0, 1], Grad-CAM for `label`
     overlay_image: Image.Image  # RGB heatmap alpha-blended over the input image
+    # (x, y, width, height) in overlay_image's own pixel coordinates (same
+    # resolution -- draw this directly on overlay_image, not on the raw
+    # input), tightly around the single largest cluster of top activation.
+    # Only meaningful for a defect, so it's None for 'ok' rather than a box
+    # around whatever the model attended to on a part with nothing wrong.
+    bounding_box: Optional[Tuple[int, int, int, int]]
 
 
 # checkpoint_path (resolved, absolute) + device -> LoadedModel. Module-level
@@ -211,13 +218,16 @@ def predict(
         pil_image, loaded.model, loaded.gradcam, loaded.image_size, loaded.device
     )
     raw_logits = loaded.gradcam.last_logits[0].cpu().numpy()
+    label = CLASS_NAMES[predicted_label]
+    bounding_box = compute_bounding_box(heatmap) if label == "defective" else None
 
     return PredictionResult(
-        label=CLASS_NAMES[predicted_label],
+        label=label,
         confidence=confidence,
         raw_logits=raw_logits,
         heatmap=heatmap,
         overlay_image=overlay_image,
+        bounding_box=bounding_box,
     )
 
 
@@ -236,6 +246,7 @@ def main():
     print(f"confidence: {result.confidence:.4f}")
     print(f"raw_logits: {np.array2string(result.raw_logits, precision=4)}")
     print(f"heatmap:    shape={result.heatmap.shape} min={result.heatmap.min():.4f} max={result.heatmap.max():.4f}")
+    print(f"bounding_box: {result.bounding_box}")
 
     if args.out:
         out_path = Path(args.out)

@@ -32,12 +32,23 @@ import torch
 import torch.nn.functional as F
 from matplotlib import colormaps
 from PIL import Image
+from scipy import ndimage
 
 from src.data.transforms import build_eval_transforms
 from src.models.model import build_model
 from src.utils.checkpoint import load_checkpoint
 
 CLASS_NAMES = {0: "ok", 1: "defective"}
+
+# Overlay colormap, keyed by predicted class: 'defective' keeps the
+# hot/red 'jet' map (pairs with the red bounding box drawn on top of it --
+# see compute_bounding_box), while 'ok' uses a strictly blue/cyan sequential
+# map with no red or warm tones, so a passing part's overlay can never be
+# visually mistaken for a defect flag at a glance.
+OVERLAY_COLORMAP_BY_CLASS = {
+    "ok": "Blues",
+    "defective": "jet",
+}
 
 
 class GradCAM:
@@ -127,17 +138,58 @@ def load_model_for_gradcam(checkpoint_path, device):
     return model, gradcam, image_size
 
 
-def _colorize(heatmap):
-    """(H, W) float32 in [0, 1] -> (H, W, 3) uint8 RGB via the jet colormap."""
-    jet = colormaps["jet"]
-    colored = jet(heatmap)[:, :, :3]  # drop alpha
+def _colorize(heatmap, colormap_name="jet"):
+    """(H, W) float32 in [0, 1] -> (H, W, 3) uint8 RGB via the named colormap."""
+    cmap = colormaps[colormap_name]
+    colored = cmap(heatmap)[:, :, :3]  # drop alpha
     return (colored * 255).astype(np.uint8)
 
 
-def overlay_heatmap(base_image, heatmap, alpha=0.45):
+def compute_bounding_box(heatmap, percentile=90):
+    """Tight bounding box around the single largest contiguous cluster of
+    top Grad-CAM activation, in the heatmap's OWN (row, col) pixel space --
+    which is exactly the overlay image's pixel space too (explain_pil_image
+    generates the overlay at the same resolution as heatmap), so this box
+    can be drawn directly on the overlay/Grad-CAM image with no rescaling.
+
+    Thresholding alone can pass scattered, disconnected pixels far from the
+    real hot spot; a plain min/max box over all of them then spans most of
+    the image instead of tightly marking the actual defect region.
+    Connected-component labeling isolates every blob above threshold and
+    keeps only the largest, so a handful of scattered outlier pixels
+    elsewhere in the frame can't drag the box wide.
+
+    Args:
+        heatmap: (h, w) float32 in [0, 1].
+        percentile: keep only pixels at/above this percentile of the
+            heatmap's own value distribution (default 90 -> the top 10%,
+            tighter than a plain-threshold box needs since it's no longer
+            fighting outliers -- see module comment above).
+
+    Returns:
+        (x, y, width, height) ints in heatmap-pixel space, or None if
+        nothing clears the threshold (a uniformly-zero heatmap).
+    """
+    threshold = np.percentile(heatmap, percentile)
+    mask = heatmap >= threshold
+    if not mask.any():
+        return None
+
+    labeled, num_clusters = ndimage.label(mask, structure=np.ones((3, 3)))
+    cluster_sizes = ndimage.sum(mask, labeled, index=range(1, num_clusters + 1))
+    largest_cluster = int(np.argmax(cluster_sizes)) + 1
+
+    ys, xs = np.where(labeled == largest_cluster)
+    x_min, x_max = int(xs.min()), int(xs.max())
+    y_min, y_max = int(ys.min()), int(ys.max())
+
+    return (x_min, y_min, x_max - x_min + 1, y_max - y_min + 1)
+
+
+def overlay_heatmap(base_image, heatmap, colormap_name="jet", alpha=0.45):
     """Alpha-blend a colorized heatmap over an RGB PIL image (same size)."""
     base = np.asarray(base_image, dtype=np.float32)
-    colored = _colorize(heatmap).astype(np.float32)
+    colored = _colorize(heatmap, colormap_name).astype(np.float32)
     blended = (1 - alpha) * base + alpha * colored
     return Image.fromarray(blended.clip(0, 255).astype(np.uint8))
 
@@ -179,7 +231,8 @@ def explain_pil_image(pil_image, model, gradcam, image_size, device, class_idx=N
     # Background for the overlay: the resized (but not normalized) input
     # image, so colors match what a human sees, not ImageNet-normalized values.
     display_image = pil_image.resize((image_size[1], image_size[0]), Image.BILINEAR)
-    overlay = overlay_heatmap(display_image, heatmap)
+    colormap_name = OVERLAY_COLORMAP_BY_CLASS[CLASS_NAMES[predicted_label]]
+    overlay = overlay_heatmap(display_image, heatmap, colormap_name=colormap_name)
 
     return predicted_label, confidence, heatmap, overlay
 

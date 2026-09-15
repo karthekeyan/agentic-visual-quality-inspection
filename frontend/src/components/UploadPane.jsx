@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-function UploadPane({ previewUrl, overlayBase64, status, onFileSelected, onSubmit, hasFile }) {
+function UploadPane({ previewUrl, overlayBase64, boundingBox, status, onFileSelected, onSubmit, onReset, hasFile }) {
   const [isDragging, setIsDragging] = useState(false)
   // null until the viewer picks explicitly; defaults to side-by-side once an
   // overlay exists. Remounted per-report (see App.jsx `key`) so this resets
@@ -8,6 +8,11 @@ function UploadPane({ previewUrl, overlayBase64, status, onFileSelected, onSubmi
   const [manualView, setManualView] = useState(null)
   const view = manualView ?? (overlayBase64 ? 'side-by-side' : 'original')
   const inputRef = useRef(null)
+  // Bounding-box coordinates come back in the overlay image's own pixel
+  // space (see src.inference.gradcam.compute_bounding_box), so drawing the
+  // marker as a percentage needs the displayed overlay <img>'s natural
+  // (unscaled) size, only known once it has actually loaded.
+  const [naturalSize, setNaturalSize] = useState(null)
 
   const handleFiles = (files) => {
     const selected = files && files[0]
@@ -18,6 +23,9 @@ function UploadPane({ previewUrl, overlayBase64, status, onFileSelected, onSubmi
 
   const showOriginal = view === 'original' || view === 'side-by-side'
   const showOverlay = !!overlayBase64 && (view === 'overlay' || view === 'side-by-side')
+  // The box always draws on the overlay specifically, in any view that
+  // shows the overlay -- never on the plain original.
+  const showBox = showOverlay && !!boundingBox && !!naturalSize
 
   return (
     <section className="pane pane-upload">
@@ -51,11 +59,41 @@ function UploadPane({ previewUrl, overlayBase64, status, onFileSelected, onSubmi
             )}
             {showOverlay && (
               <figure>
-                <img src={`data:image/png;base64,${overlayBase64}`} alt="Grad-CAM overlay" />
-                <figcaption>Grad-CAM overlay</figcaption>
+                <div className="image-frame">
+                  <img
+                    src={`data:image/png;base64,${overlayBase64}`}
+                    alt="Grad-CAM overlay"
+                    onLoad={(e) => setNaturalSize({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+                  />
+                  {showBox && (
+                    <div
+                      className="bbox-marker"
+                      style={{
+                        left: `${(boundingBox[0] / naturalSize.w) * 100}%`,
+                        top: `${(boundingBox[1] / naturalSize.h) * 100}%`,
+                        width: `${(boundingBox[2] / naturalSize.w) * 100}%`,
+                        height: `${(boundingBox[3] / naturalSize.h) * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+                <figcaption>Grad-CAM overlay{showBox ? ' (defect boxed)' : ''}</figcaption>
               </figure>
             )}
           </div>
+        )}
+
+        {status === 'done' && (
+          <button
+            type="button"
+            className="new-inspection-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              onReset()
+            }}
+          >
+            ← New inspection
+          </button>
         )}
 
         <input
@@ -103,14 +141,16 @@ function UploadPane({ previewUrl, overlayBase64, status, onFileSelected, onSubmi
           </div>
         )}
 
-        <button
-          type="button"
-          className="submit-btn"
-          disabled={!hasFile || status === 'analyzing'}
-          onClick={onSubmit}
-        >
-          {status === 'analyzing' ? 'Analyzing…' : 'Submit for inspection'}
-        </button>
+        {status !== 'done' && (
+          <button
+            type="button"
+            className="submit-btn"
+            disabled={!hasFile || status === 'analyzing'}
+            onClick={onSubmit}
+          >
+            {status === 'analyzing' ? 'Analyzing…' : 'Submit for inspection'}
+          </button>
+        )}
       </div>
     </section>
   )

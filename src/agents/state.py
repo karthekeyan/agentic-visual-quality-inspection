@@ -48,6 +48,10 @@ class InspectionState(TypedDict, total=False):
         heatmap: Grad-CAM heatmap, float32 (H, W) in [0, 1].
         overlay_image: Grad-CAM heatmap alpha-blended over the input
             image, for display.
+        bounding_box: (x, y, width, height) in overlay_image's own pixel
+            coordinates, tightly around the single largest cluster of top
+            activation -- only set when label == 'defective', None
+            otherwise. See src.inference.gradcam.compute_bounding_box.
         defect_characterization: set by the Characterization Agent -- a
             heuristic (rule-based, not learned) description of the
             Grad-CAM activation pattern, only meaningful when
@@ -109,6 +113,7 @@ class InspectionState(TypedDict, total=False):
     raw_logits: Optional[np.ndarray]
     heatmap: Optional[np.ndarray]
     overlay_image: Optional[Image.Image]
+    bounding_box: Optional[Any]
 
     defect_characterization: Optional[Any]
     root_cause: Optional[Any]

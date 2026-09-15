@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import UploadPane from './components/UploadPane'
 import ResultPane from './components/ResultPane'
-import TrendStrip from './components/TrendStrip'
-import HistoryList from './components/HistoryList'
-import { inspectImage, fetchHistory } from './api/client'
+import { inspectImage } from './api/client'
 import './App.css'
 
 function App() {
@@ -12,21 +10,6 @@ function App() {
   const [status, setStatus] = useState('idle')
   const [report, setReport] = useState(null)
   const [errorMessage, setErrorMessage] = useState(null)
-  const [history, setHistory] = useState([])
-  const [historyError, setHistoryError] = useState(null)
-
-  const loadHistory = useCallback(() => {
-    fetchHistory(5)
-      .then((data) => {
-        setHistory(data.records)
-        setHistoryError(null)
-      })
-      .catch(() => setHistoryError('History unavailable.'))
-  }, [])
-
-  useEffect(() => {
-    loadHistory()
-  }, [loadHistory])
 
   const handleFileSelected = (selectedFile) => {
     setFile(selectedFile)
@@ -39,6 +22,17 @@ function App() {
     })
   }
 
+  const handleReset = () => {
+    setPreviewUrl((previous) => {
+      if (previous) URL.revokeObjectURL(previous)
+      return null
+    })
+    setFile(null)
+    setReport(null)
+    setErrorMessage(null)
+    setStatus('idle')
+  }
+
   const handleSubmit = async () => {
     if (!file) return
     setStatus('analyzing')
@@ -47,7 +41,6 @@ function App() {
       const data = await inspectImage(file)
       setReport(data)
       setStatus('done')
-      loadHistory()
     } catch {
       setErrorMessage('Could not analyze this image. Check the file and try again.')
       setStatus('error')
@@ -65,16 +58,15 @@ function App() {
           key={report?.generated_at ?? 'no-report'}
           previewUrl={previewUrl}
           overlayBase64={report?.overlay_image_base64}
+          boundingBox={report?.inspection?.bounding_box}
           status={status}
           hasFile={!!file}
           onFileSelected={handleFileSelected}
           onSubmit={handleSubmit}
+          onReset={handleReset}
         />
         <ResultPane report={report} status={status} errorMessage={errorMessage} />
       </main>
-
-      <TrendStrip trend={report?.trend} />
-      <HistoryList records={history} error={historyError} />
     </div>
   )
 }
