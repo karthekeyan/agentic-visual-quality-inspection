@@ -1,8 +1,10 @@
 # Agentic Visual Quality Inspection for Casting Manufacturing
 
-A vision-based defect detection system for metal casting parts, built with PyTorch. The system classifies casting images (e.g. submersible pump impellers) as **ok** or **defective**, with a project structure designed to support iterating from a simple CNN classifier toward more advanced, agentic inspection pipelines.
+A vision-based defect detection system for metal casting parts, built with PyTorch, wrapped in a six-agent LangGraph pipeline (detection, characterization, root-cause reasoning, disposition, trend tracking, and reporting), served over a FastAPI backend, and viewed through a React inspection-console dashboard.
 
-## Documentation See the [Functional Proposal](docs/functional-proposal.md) for the full system design, agent roles, and current validation status.  
+## Documentation
+
+See the [Functional Proposal](docs/functional-proposal.md) for the full system design, agent roles, validated results, and an honest breakdown of what's proven versus heuristic versus simulated.
 
 ## Project Structure
 
@@ -13,7 +15,9 @@ A vision-based defect detection system for metal casting parts, built with PyTor
 │   ├── raw/         # Original, immutable image data
 │   ├── interim/     # Intermediate data during cleaning/preprocessing
 │   ├── processed/   # Final datasets ready for training
-│   └── external/    # Data from third-party sources
+│   ├── external/    # Data from third-party sources
+│   ├── knowledge_base/  # Curated defect → process-cause entries (tracked in git)
+│   └── chroma_db/   # Persisted ChromaDB vector store (not tracked — regenerated via ingest)
 ├── models/          # Trained model artifacts
 │   ├── checkpoints/ # Checkpoints saved during training
 │   └── pretrained/  # Pretrained/backbone weights
@@ -22,14 +26,18 @@ A vision-based defect detection system for metal casting parts, built with PyTor
 │   ├── data/        # Dataset classes, loaders, transforms
 │   ├── models/      # Model architectures
 │   ├── training/    # Training loops, optimizers, schedulers
-│   ├── inference/   # Inference / prediction scripts
-│   └── utils/       # Shared utilities (seeding, logging, metrics)
+│   ├── inference/   # Inference, Grad-CAM, latency benchmarking, model comparison
+│   ├── knowledge/   # Knowledge base ingestion into ChromaDB
+│   ├── agents/      # The 6-agent LangGraph pipeline + orchestrator + batch runner
+│   ├── api/         # FastAPI backend exposing the pipeline over HTTP
+│   └── utils/       # Shared utilities (seeding, logging, metrics, checkpointing)
+├── frontend/        # React + Vite inspection-console dashboard
 ├── outputs/         # Generated artifacts (not tracked in git — see .gitignore)
-│   ├── logs/        # Training/inference logs (e.g. TensorBoard)
+│   ├── logs/        # Training/inference logs, inspection history
 │   ├── predictions/ # Model predictions on new data
-│   ├── figures/     # Plots and visualizations
-│   └── reports/     # Evaluation reports/summaries
-├── tests/           # Unit and integration tests
+│   ├── figures/     # Plots, visualizations, Grad-CAM overlays
+│   └── reports/     # Evaluation reports, model comparisons, per-inspection audit records
+├── tests/           # Unit and integration tests (66 passing across ML + agents + API)
 ├── docs/            # Project documentation
 ├── requirements.txt # Python dependencies
 └── .gitignore
@@ -39,10 +47,18 @@ A vision-based defect detection system for metal casting parts, built with PyTor
 
 ### 1. Environment setup
 
+Requires **Python 3.10+** (LangGraph is incompatible with 3.8) and **Node 20+** (via [nvm](https://github.com/nvm-sh/nvm)) for the dashboard frontend.
+
 ```bash
-python -m venv .venv
+python3.10 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+Create a `.env` file in the project root (never committed — see `.gitignore`) with your Anthropic API key, used by the Root-Cause Agent:
+
+```
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
 ### 2. Data
@@ -51,7 +67,7 @@ Place raw casting images under `data/raw/` (organized by class, e.g. `data/raw/o
 
 ### 3. Configuration
 
-Model, data, and training parameters are defined in `config/config.yaml`.
+Model, data, training, disposition, and trend parameters are defined in `config/config.yaml`.
 
 ### 4. Training
 
@@ -59,19 +75,66 @@ Model, data, and training parameters are defined in `config/config.yaml`.
 python -m src.training.train --config config/config.yaml
 ```
 
-### 5. Inference
+### 5. Inference (standalone)
 
 ```bash
 python -m src.inference.predict --checkpoint models/checkpoints/best.pt --input path/to/image.png
 ```
 
-### 6. Tests
+### 6. Knowledge base setup (required once, before running the agent pipeline)
+
+The Root-Cause Agent retrieves from a curated defect-to-process-cause knowledge base. Embed it into ChromaDB:
+
+```bash
+python -m src.knowledge.ingest
+```
+
+### 7. Run the full agent pipeline
+
+```bash
+python -m src.agents.run_pipeline --image path/to/image.png
+```
+
+For a batch of images with a summary table:
+
+```bash
+python -m src.agents.run_batch --dir path/to/image/folder --limit 20
+```
+
+### 8. Run the dashboard
+
+Backend (Terminal 1):
+
+```bash
+source .venv/bin/activate
+uvicorn src.api.main:app --host 0.0.0.0 --port 8742 --reload
+```
+
+Frontend (Terminal 2):
+
+```bash
+cd frontend
+nvm use 20
+npm run dev
+```
+
+Open the printed local URL (default `http://localhost:5173`) in a browser.
+
+### 9. Tests
 
 ```bash
 pytest tests/
 ```
 
+For a shareable HTML report:
+
+```bash
+pip install pytest-html
+pytest tests/ --html=outputs/reports/test_report.html --self-contained-html
+```
+
 ## Notes
 
-- `data/`, `models/checkpoints`, `models/pretrained`, and `outputs/` are git-ignored except for `.gitkeep` placeholders — large binary artifacts should be stored externally (e.g. DVC, cloud storage) rather than committed directly.
+- `data/`, `models/checkpoints`, `models/pretrained`, `data/chroma_db/`, `outputs/`, `frontend/node_modules`, and `.env` are git-ignored except for `.gitkeep` placeholders and `data/knowledge_base/` — large binary artifacts, generated data, and secrets should never be committed directly.
 - Notebooks in `notebooks/` are intended for exploration; reusable logic should be promoted into `src/` modules.
+- Only the **Root-Cause Agent** uses a language model (Claude, via the Anthropic API); Characterization and Disposition are deterministic rule-based logic, and Trend/Reporting are statistics and formatting. See the [Functional Proposal](docs/functional-proposal.md) for the full breakdown.
